@@ -1,5 +1,5 @@
 name: 'Shai-Hulud 2.0 Detector'
-description: 'Comprehensive detection of Shai-Hulud 2.0 supply chain attack indicators including compromised packages, suspicious scripts, TruffleHog activity, malicious runners, and secrets exfiltration'
+description: 'Detect Shai-Hulud 2.0 npm supply chain attack - scans for 790+ compromised packages and malicious indicators'
 author: 'gensecaihq'
 branding:
   icon: 'shield'
