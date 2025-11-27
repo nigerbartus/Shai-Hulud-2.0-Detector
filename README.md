@@ -333,17 +333,55 @@ You can also run the detector locally for development or CI systems without GitH
 git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git
 cd Shai-Hulud-2.0-Detector
 npm install
+npm run build
+```
+
+#### Set Options
+There are two ways to set the options, either via CLI arguments or by setting environment variables.
+
+❗Make sure to add the working directory option to the path of the project you want to scan. 
+
+All other options are set to the below defaults and thus optional.
+
+Set the `--working-directory="/path/to/your/project"` flag when running the script or set the `WORKING_DIRECTORY="/path/to/your/project"` environment variable like listed below.
+
+##### Via CLI arguments (option 1)
+```bash
+node dist/index.js --working-directory="/path/to/your/project" [options]
+
+Options:
+--fail-on-critical=true
+--fail-on-high=false
+--fail-on-any=false
+--scan-lockfiles=true
+--scan-node-modules=true
+--output-format="json"
+--working-directory="/path/to/your/project"
+```
+
+##### Via Environment Variables (option 2)
+**Bash**
+```bash
+export FAIL_ON_CRITICAL=true
+export FAIL_ON_HIGH=false
+export FAIL_ON_ANY=false
+export SCAN_LOCKFILES=true
+export SCAN_NODE_MODULES=true
+export OUTPUT_FORMAT="json"
+export WORKING_DIRECTORY="/path/to/your/project"
+
 node dist/index.js
 ```
 
-#### Environment Variables for Local Use
-
-```bash
-# Set inputs via environment variables
-export INPUT_FAIL-ON-CRITICAL=true
-export INPUT_SCAN-LOCKFILES=true
-export INPUT_OUTPUT-FORMAT=json
-export INPUT_WORKING-DIRECTORY=/path/to/your/project
+**Powershell**
+```powershell
+$Env:FAIL_ON_CRITICAL="true"
+$Env:FAIL_ON_HIGH="false"
+$Env:FAIL_ON_ANY="false"
+$Env:SCAN_LOCKFILES="true"
+$Env:SCAN_NODE_MODULES="true"
+$Env:OUTPUT_FORMAT="json"
+$Env:WORKING_DIRECTORY="/path/to/your/project"
 
 node dist/index.js
 ```
@@ -361,8 +399,8 @@ shai-hulud-scan:
     - git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git /tmp/detector
     - cd /tmp/detector && npm ci
     - |
-      export INPUT_FAIL-ON-CRITICAL=true
-      export INPUT_WORKING-DIRECTORY=$CI_PROJECT_DIR
+      export INPUT_FAIL_ON_CRITICAL=true
+      export INPUT_WORKING_DIRECTORY=$CI_PROJECT_DIR
       node /tmp/detector/dist/index.js
   only:
     changes:
@@ -383,8 +421,8 @@ pipeline {
                 sh '''
                     git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git /tmp/detector
                     cd /tmp/detector && npm ci
-                    export INPUT_FAIL-ON-CRITICAL=true
-                    export INPUT_WORKING-DIRECTORY=${WORKSPACE}
+                    export INPUT_FAIL_ON_CRITICAL=true
+                    export INPUT_WORKING_DIRECTORY=${WORKSPACE}
                     node /tmp/detector/dist/index.js
                 '''
             }
@@ -414,8 +452,8 @@ steps:
   - script: |
       git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git /tmp/detector
       cd /tmp/detector && npm ci
-      export INPUT_FAIL-ON-CRITICAL=true
-      export INPUT_WORKING-DIRECTORY=$(Build.SourcesDirectory)
+      export INPUT_FAIL_ON_CRITICAL=true
+      export INPUT_WORKING_DIRECTORY=$(Build.SourcesDirectory)
       node /tmp/detector/dist/index.js
     displayName: 'Shai-Hulud Security Scan'
 ```
@@ -436,8 +474,8 @@ jobs:
           command: |
             git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git /tmp/detector
             cd /tmp/detector && npm ci
-            export INPUT_FAIL-ON-CRITICAL=true
-            export INPUT_WORKING-DIRECTORY=$(pwd)
+            export INPUT_FAIL_ON_CRITICAL=true
+            export INPUT_WORKING_DIRECTORY=$(pwd)
             node /tmp/detector/dist/index.js
 
 workflows:
@@ -692,7 +730,7 @@ Access scan results for conditional logic or notifications:
 | `fail-on-any` | Fail workflow if any compromised packages are found | `boolean` | `false` |
 | `scan-lockfiles` | Scan lockfiles for transitive dependencies | `boolean` | `true` |
 | `scan-node-modules` | Scan node_modules directory (slower, more thorough) | `boolean` | `false` |
-| `output-format` | Output format: `text`, `json`, or `sarif` | `string` | `text` |
+| `output-format` | Output format: `text`, `json`, or `sarif` |  `'text' \| 'json' \| 'sarif'`  | `json` |
 | `working-directory` | Directory to scan (relative to repository root) | `string` | `.` |
 
 ### Outputs Reference
@@ -707,18 +745,31 @@ Access scan results for conditional logic or notifications:
 | `security-findings` | JSON array of security findings | `[{"type":"suspicious-script",...}]` |
 | `sarif-file` | Path to generated SARIF file (when output-format is sarif) | `shai-hulud-results.sarif` |
 
+### CLI Arguments
+
+When running locally or in non-GitHub CI systems:
+
+| Variable | Maps To | Type | Default 
+|----------|---------|---------|---------|
+| `--fail-on-critical` | `fail-on-critical` input | `boolean` | `true`
+| `--fail-on-high` | `fail-on-high` input | `boolean` | `false` 
+| `--fail-on-any` | `fail-on-any` input | `boolean` | `false`
+| `--scan-lockfiles` | `scan-lockfiles` input | `boolean` | `true`
+| `--output-format` | `output-format` input | `'text' \| 'json' \| 'sarif'` | `json` 
+| `--working-directory` | `working-directory` input | `string` | `.`
+
 ### Environment Variables
 
 When running locally or in non-GitHub CI systems:
 
-| Variable | Maps To | Example |
-|----------|---------|---------|
-| `INPUT_FAIL-ON-CRITICAL` | `fail-on-critical` input | `true` |
-| `INPUT_FAIL-ON-HIGH` | `fail-on-high` input | `false` |
-| `INPUT_FAIL-ON-ANY` | `fail-on-any` input | `false` |
-| `INPUT_SCAN-LOCKFILES` | `scan-lockfiles` input | `true` |
-| `INPUT_OUTPUT-FORMAT` | `output-format` input | `json` |
-| `INPUT_WORKING-DIRECTORY` | `working-directory` input | `/app` |
+| Variable | Maps To | Type | Default 
+|----------|---------|---------|---------|
+| `INPUT_FAIL_ON_CRITICAL` | `fail-on-critical` input | `boolean` | `true`
+| `INPUT_FAIL_ON_HIGH` | `fail-on-high` input | `boolean` | `false`
+| `INPUT_FAIL_ON_ANY` | `fail-on-any` input | `boolean` | `false`
+| `INPUT_SCAN_LOCKFILES` | `scan-lockfiles` input | `boolean` | `true`
+| `INPUT_OUTPUT_FORMAT` | `output-format` input | `'text' \| 'json' \| 'sarif'` | `json` 
+| `INPUT_WORKING_DIRECTORY` | `working-directory` input | `string` | `.`
 
 ---
 
@@ -1009,7 +1060,7 @@ npm install
 npm run build
 
 # 5. Test locally
-export INPUT_WORKING-DIRECTORY=/path/to/test/project
+export INPUT_WORKING_DIRECTORY=/path/to/test/project
 node dist/index.js
 ```
 
