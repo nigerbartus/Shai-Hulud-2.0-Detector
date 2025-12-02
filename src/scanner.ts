@@ -20,7 +20,11 @@ import type {
 // =============================================================================
 
 // Suspicious commands in package.json scripts
+// NOTE: Patterns are ordered by specificity - more specific patterns first
 const SUSPICIOUS_SCRIPT_PATTERNS = [
+	// ==========================================================================
+	// CRITICAL: Shai-Hulud specific IoCs (highest priority)
+	// ==========================================================================
 	{
 		pattern: /setup_bun\.js/i,
 		description: 'Shai-Hulud malicious setup script',
@@ -29,32 +33,80 @@ const SUSPICIOUS_SCRIPT_PATTERNS = [
 		pattern: /bun_environment\.js/i,
 		description: 'Shai-Hulud environment script',
 	},
+
+	// ==========================================================================
+	// HIGH RISK: Remote code execution patterns
+	// ==========================================================================
 	{
-		pattern: /\bcurl\s+[^|]*\|\s*(ba)?sh/i,
-		description: 'Curl piped to shell execution',
+		// Curl/wget piped to shell - classic supply chain attack vector
+		pattern: /\b(curl|wget)\s+[^|]*\|\s*(ba)?sh/i,
+		description: 'Remote script piped to shell execution',
 	},
 	{
-		pattern: /\bwget\s+[^|]*\|\s*(ba)?sh/i,
-		description: 'Wget piped to shell execution',
+		// Command substitution with network tools
+		pattern: /\$\((curl|wget)\b/i,
+		description: 'Command substitution with network fetch',
+	},
+
+	// ==========================================================================
+	// EVAL PATTERNS: Carefully designed to avoid false positives
+	// ==========================================================================
+	{
+		// JavaScript eval() function call - always suspicious
+		pattern: /\beval\s*\([^)]/i,
+		description: 'JavaScript eval() with code execution',
 	},
 	{
-		pattern: /\beval\s*\(/i,
-		description: 'Eval execution (potential code injection)',
+		// Shell eval with variable expansion or command substitution
+		// Uses negative lookbehind to exclude --eval and -eval (Node CLI flags)
+		// Matches: eval "$VAR", eval '...', eval `...`, eval $(...)
+		pattern: /(?<![-])eval\s+['"`$]/i,
+		description: 'Shell eval with dynamic content',
 	},
-	{ pattern: /\beval\s+['"`$]/i, description: 'Eval with dynamic content' },
+
+	// ==========================================================================
+	// OBFUSCATION PATTERNS: Common in malicious payloads
+	// ==========================================================================
 	{
-		pattern: /base64\s+(--)?d(ecode)?/i,
-		description: 'Base64 decode execution',
+		// Base64 decode piped to execution - common obfuscation technique
+		// Matches: base64 -d, base64 --decode, base64 -D, base64 decode
+		pattern: /base64\s+(-{1,2})?d(ecode)?\b[^|]*\|\s*(ba)?sh/i,
+		description: 'Base64 decoded payload piped to shell',
 	},
-	{ pattern: /\$\(curl/i, description: 'Command substitution with curl' },
-	{ pattern: /\$\(wget/i, description: 'Command substitution with wget' },
 	{
-		pattern: /node\s+-e\s+['"].*?(http|eval|Buffer\.from)/i,
-		description: 'Inline Node.js code execution',
+		// Base64 decode in Node execution context
+		pattern: /node\s+.*Buffer\.from\s*\([^)]+,\s*['"]base64['"]\)/i,
+		description: 'Base64 payload execution in Node.js',
+	},
+
+	// ==========================================================================
+	// NODE -e PATTERNS: Only flag when containing suspicious operations
+	// ==========================================================================
+	{
+		// Node inline execution with network operations
+		pattern: /node\s+(-e|--eval)\s+['"].*?(https?:|fetch\(|require\s*\(\s*['"]https?)/i,
+		description: 'Node.js inline code with network access',
 	},
 	{
-		pattern: /npx\s+--yes\s+[^@\s]+@/i,
-		description: 'NPX auto-install of versioned package',
+		// Node inline execution with child_process or spawn/exec
+		// Matches require('child_process'), child_process, spawn(, exec(, execSync
+		pattern: /node\s+(-e|--eval)\s+[^|]*child_process/i,
+		description: 'Node.js inline code with shell execution',
+	},
+	{
+		// Node inline execution with eval (eval inside node -e)
+		pattern: /node\s+(-e|--eval)\s+['"].*?\beval\s*\(/i,
+		description: 'Node.js inline code with eval()',
+	},
+
+	// ==========================================================================
+	// NPX PATTERNS: Auto-install can pull malicious packages
+	// ==========================================================================
+	{
+		// npx with --yes flag auto-installing arbitrary versioned packages
+		// More specific: requires @version pattern suggesting specific version targeting
+		pattern: /npx\s+(-y|--yes)\s+\S+@\d/i,
+		description: 'NPX auto-install of specific package version',
 	},
 ];
 
@@ -669,38 +721,39 @@ export function checkSuspiciousScripts(filePath: string): SecurityFinding[] {
 	for (const [scriptName, scriptContent] of Object.entries(pkg.scripts)) {
 		if (!scriptContent) continue;
 
-		// Check for Shai-Hulud specific patterns (Critical)
-		if (
-			/setup_bun\.js/i.test(scriptContent) ||
-			/bun_environment\.js/i.test(scriptContent)
-		) {
-			findings.push({
-				type: 'suspicious-script',
-				severity: 'critical',
-				title: `Shai-Hulud malicious script in "${scriptName}"`,
-				description: `The "${scriptName}" script contains a reference to known Shai-Hulud malicious files. This is a strong indicator of compromise.`,
-				location: filePath,
-				evidence: `"${scriptName}": "${scriptContent}"`,
-			});
-			continue;
-		}
-
 		// Check all suspicious patterns
+		// NOTE: Patterns are designed to avoid false positives (e.g., --eval vs shell eval)
 		for (const { pattern, description } of SUSPICIOUS_SCRIPT_PATTERNS) {
 			if (pattern.test(scriptContent)) {
-				// preinstall/postinstall with suspicious commands are higher severity
+				// Determine severity based on script type and pattern
+				const isLifecycleHook = [
+					'preinstall',
+					'postinstall',
+					'prepare',
+					'prepublish',
+					'prepublishOnly',
+				].includes(scriptName);
+
+				// Shai-Hulud IoCs are always critical
+				const isShaiHuludIoC =
+					/setup_bun\.js|bun_environment\.js/i.test(scriptContent);
+
+				// Remote code execution patterns are critical in lifecycle hooks
+				const isRemoteCodeExec =
+					/curl|wget|fetch\(|\$\(curl|\$\(wget/i.test(scriptContent);
+
 				const isCritical =
-					['preinstall', 'postinstall', 'prepare', 'prepublish'].includes(
-						scriptName,
-					) &&
-					(pattern.test(scriptContent) ||
-						/curl|wget|eval/i.test(scriptContent));
+					isShaiHuludIoC || (isLifecycleHook && isRemoteCodeExec);
 
 				findings.push({
 					type: 'suspicious-script',
 					severity: isCritical ? 'critical' : 'high',
-					title: `Suspicious "${scriptName}" script`,
-					description: `${description}. This pattern is commonly used in supply chain attacks.`,
+					title: isShaiHuludIoC
+						? `Shai-Hulud malicious script in "${scriptName}"`
+						: `Suspicious "${scriptName}" script`,
+					description: isShaiHuludIoC
+						? `The "${scriptName}" script contains a reference to known Shai-Hulud malicious files. This is a strong indicator of compromise.`
+						: `${description}. This pattern is commonly used in supply chain attacks.`,
 					location: filePath,
 					evidence: `"${scriptName}": "${scriptContent.substring(0, 200)}${scriptContent.length > 200 ? '...' : ''}"`,
 				});
