@@ -1,11 +1,13 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import JSON5 from 'json5'
 import SemVer from 'semver/classes/semver';
 import intersects from 'semver/ranges/intersects';
 import satisfies from 'semver/functions/satisfies';
 import masterPackagesData from '../compromised-packages.json';
 import type {
+	BunLock,
 	MasterPackages,
 	PackageJson,
 	PackageLock,
@@ -358,7 +360,7 @@ const EXCLUDED_PATHS = [
 	/\/src\/index\.(ts|js)$/i,
 	/\/dist\/index\.js$/i,
 	/\/dist\/.*\.d\.ts$/i,
-  /\/[^/]*\.xcassets\/.*\/contents\.json$/i,
+	/\/[^/]*\.xcassets\/.*\/contents\.json$/i,
 ];
 
 /**
@@ -436,11 +438,11 @@ export function isAffected(packageName: string, version: string = '*'): boolean 
 			return true;
 		}
 		try {
-			const semverVersion = new SemVer(version, {loose: true});
+			const semverVersion = new SemVer(version, { loose: true });
 			return pkg.affectedVersions.some(range => satisfies(semverVersion, range));
 		} catch (e) {
 			// Invalid semver version, probably because version is itself a range from package.lock
-			return pkg.affectedVersions.some(range => intersects(version, range, {loose: true}));
+			return pkg.affectedVersions.some(range => intersects(version, range, { loose: true }));
 		}
 	}
 	return false;
@@ -529,6 +531,21 @@ export function parseYarnLock(filePath: string): Map<string, string> | null {
 		}
 
 		return packages;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Parse a bun.lock file with graceful
+ * failure on read/parse errors.
+ * @param filePath Lockfile path.
+ * @returns Parsed BunLock object or null on failure.
+ */
+export function parseBunLock(filePath: string): BunLock | null {
+	try {
+		const content = fs.readFileSync(filePath, 'utf8');
+		return JSON5.parse(content) as BunLock;
 	} catch {
 		return null;
 	}
@@ -679,6 +696,55 @@ export function scanYarnLock(filePath: string): ScanResult[] {
 }
 
 /**
+ * Scan a bun.lock for affected packages. Bun lockfiles do not distinguish
+ * direct vs transitive so all findings are marked transitive.
+ * @param filePath bun.lock path.
+ * @returns ScanResult list.
+ */
+export function scanBunLock(filePath: string): ScanResult[] {
+	const results: ScanResult[] = [];
+	const bunLock = parseBunLock(filePath);
+
+	// For each dep, if root and in directDeps, isDirect true
+
+	if (!bunLock) return results;
+
+	const directDependenciesNamesArray: string[] = []
+
+	Object.values(bunLock.workspaces).forEach(({ dependencies, devDependencies }) => {
+		directDependenciesNamesArray.splice(-1, 0, ...Object.keys(dependencies))
+		directDependenciesNamesArray.splice(-1, 0, ...Object.keys(devDependencies))
+	})
+
+	const directDependenciesNames = new Set(directDependenciesNamesArray)
+
+	for (const [scopedName, entry] of Object.entries(bunLock.packages)) {
+		const splittedNameVersion = entry[0].split('@')
+		const version = splittedNameVersion.pop()
+		const name = splittedNameVersion.join('@')
+
+		const isRoot = name === scopedName
+		const isDirect = isRoot && directDependenciesNames.has(name)
+
+		if (version == null) {
+			continue;
+		}
+
+		const affected = isAffected(name, version);
+		results.push({
+			package: name,
+			version,
+			affected,
+			severity: affected ? getPackageSeverity(name) : 'none',
+			isDirect,
+			location: filePath,
+		});
+	}
+
+	return results;
+}
+
+/**
  * Discover recognized lockfiles recursively (depth <= 5) excluding node_modules
  * and hidden directories.
  * @param directory Root directory to begin search.
@@ -692,6 +758,7 @@ export function findLockfiles(directory: string, scanNodeModules: boolean = fals
 		'yarn.lock',
 		'pnpm-lock.yaml',
 		'npm-shrinkwrap.json',
+		'bun.lock',
 	];
 
 	// Search in root and subdirectories (for monorepos)
@@ -985,11 +1052,11 @@ export function checkSecretsExfiltration(directory: string): SecurityFinding[] {
 						'trufflehog_output.json',
 					];
 					if (knownMaliciousFiles.includes(entry.name.toLowerCase())) {
-            const isXcodeAssetContents =
-              /\/[^/]+\.xcassets\/(?:.*\/)?contents\.json$/i.test(fullPath);
-            if (isXcodeAssetContents) {
-              continue;
-            }
+						const isXcodeAssetContents =
+							/\/[^/]+\.xcassets\/(?:.*\/)?contents\.json$/i.test(fullPath);
+						if (isXcodeAssetContents) {
+							continue;
+						}
 						findings.push({
 							type: 'secrets-exfiltration',
 							severity: 'critical',
@@ -1527,6 +1594,8 @@ export function runScan(
 				results = scanPackageLock(file);
 			} else if (file.endsWith('yarn.lock')) {
 				results = scanYarnLock(file);
+			} else if (file.endsWith('bun.lock')) {
+				results = scanBunLock(file);
 			}
 			// TODO: Add pnpm-lock.yaml support
 

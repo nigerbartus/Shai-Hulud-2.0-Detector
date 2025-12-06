@@ -176,6 +176,24 @@ export interface YarnLockEntry {
   dependencies?: Record<string, string>;
 }
 
+export interface BunLock {
+  lockfileVersion: number,
+  configVersion: number,
+  workspaces: Record<string, BunLockWorkspace>
+  trustedDependencies: string[], // packageName
+  overrides: Record<string, string>, // packageName: version
+  packages: Record<string, BunLockPackageEntry> // [rootPackage/]packageName: BunLockPackageEntry
+}
+
+// packageName@version, "", { dependencies: { packageName: version }}, sha512
+export type BunLockPackageEntry = [string, string, { dependencies: Record<string, string> }, string]
+
+export interface BunLockWorkspace {
+  name: string,
+  dependencies: Record<string, string>,
+  devDependencies: Record<string, string>
+}
+
 export interface Inputs {
   failOnCritical: boolean;
   failOnHigh: boolean;

@@ -1,4 +1,4 @@
-import type { PackageJson, PackageLock, SarifResult, ScanResult, ScanSummary, SecurityFinding } from './types';
+import type { BunLock, PackageJson, PackageLock, SarifResult, ScanResult, ScanSummary, SecurityFinding } from './types';
 /**
  * Fast membership check for whether a package name appears in the compromised
  * master package list.
@@ -35,6 +35,13 @@ export declare function parsePackageLock(filePath: string): PackageLock | null;
  */
 export declare function parseYarnLock(filePath: string): Map<string, string> | null;
 /**
+ * Parse a bun.lock file with graceful
+ * failure on read/parse errors.
+ * @param filePath Lockfile path.
+ * @returns Parsed BunLock object or null on failure.
+ */
+export declare function parseBunLock(filePath: string): BunLock | null;
+/**
  * Scan a package.json for compromised dependencies across all dependency blocks
  * (dependencies, dev, peer, optional). Marks each finding with direct/transitive flag.
  * @param filePath Path to package.json.
@@ -56,6 +63,13 @@ export declare function scanPackageLock(filePath: string): ScanResult[];
  * @returns ScanResult list.
  */
 export declare function scanYarnLock(filePath: string): ScanResult[];
+/**
+ * Scan a bun.lock for affected packages. Bun lockfiles do not distinguish
+ * direct vs transitive so all findings are marked transitive.
+ * @param filePath bun.lock path.
+ * @returns ScanResult list.
+ */
+export declare function scanBunLock(filePath: string): ScanResult[];
 /**
  * Discover recognized lockfiles recursively (depth <= 5) excluding node_modules
  * and hidden directories.
